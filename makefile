@@ -1,10 +1,9 @@
-all: client server
-
-client: client.c
-	gcc client.c -o client
-
-server: server.c
-	gcc server.c -o server
+all:
+	make compile
 
 clean:
-	rm client server
+	rm -rf ./client ./server
+
+compile:
+	gcc -Wall ./client.c -o ./client
+	gcc -Wall ./server.c -o ./server
