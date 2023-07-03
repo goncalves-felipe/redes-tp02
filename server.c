@@ -278,6 +278,7 @@ void removeEquipment(char *responseMessage, struct sockaddr_in idOriginAdress, C
 
 void infoEquipment(char *responseMessage, struct sockaddr_in clientAdress, Command command, char *buffer)
 {
+    printf("entrou acá");
     int foundOrigin = avaiableEquipments[(command.idOrigem - 1)].id == command.idOrigem;
     int foundDestiny = avaiableEquipments[(command.idDestino - 1)].id == command.idDestino;
 
@@ -322,7 +323,6 @@ void interpretCommand(struct ThreadArgs *args)
     int commandSent = atoi(commandToken);
     char responseMessage[MAX_MESSAGE_SIZE] = "";
     char *mensagem;
-    char *temp;
     Command command;
 
     switch (commandSent)
@@ -338,19 +338,13 @@ void interpretCommand(struct ThreadArgs *args)
         removeEquipment(responseMessage, args->clientAdress, command);
         break;
     case REQ_INF:
+    case RES_INF:
         command.idMessage = commandSent;
         commandToken = strtok(NULL, " ");
         command.idOrigem = atoi(commandToken);
         commandToken = strtok(NULL, " ");
         command.idDestino = atoi(commandToken);
         mensagem = strtok(NULL, " ");
-        temp = strtok(NULL, " ");
-        while (temp != NULL)
-        {
-            strcat(mensagem, temp);
-            temp = strtok(NULL, " ");
-        }
-        command.conteudo = mensagem;
         infoEquipment(responseMessage, args->clientAdress, command, args->buffer);
         break;
     default:

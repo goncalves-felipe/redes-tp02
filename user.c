@@ -1,3 +1,5 @@
+// Client side C/C++ program to demonstrate Socket
+// programming
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -49,6 +51,19 @@ typedef struct
     char *conteudo;
 } Command;
 
+void buildRESINFO(char *buffer, int idOrigin, int idDestination)
+{
+    Command command;
+    command.idMessage = RES_INF;
+    command.idOrigem = idOrigin;
+    command.idDestino = idDestination;
+    sprintf(buffer, "%d %d %d ", command.idMessage, command.idDestino, command.idOrigem);
+    char randomNumbers[10] = "";
+    sprintf(randomNumbers, "%d.%d%d\n", rand() % 9, rand() % 9, rand() % 9);
+    strcat(buffer, randomNumbers);
+    printf("requested information\n");
+}
+
 void RequestAdd(struct sockaddr_in serverAdress)
 {
     char message[MAX_MESSAGE_SIZE];
@@ -80,15 +95,14 @@ void RequestRemove(struct sockaddr_in serverAdress)
     }
 }
 
-void RequestInfo(int targetId, struct sockaddr_in serverAdress, char *mensagem)
+void RequestInfo(int targetId, struct sockaddr_in serverAdress, char* mensagem)
 {
     char message[MAX_MESSAGE_SIZE] = "";
     Command command;
     command.idMessage = REQ_INF;
     command.idOrigem = equipmentId;
     command.idDestino = targetId;
-    command.conteudo = mensagem;
-    sprintf(message, "%d %d %d  %s", command.idMessage, command.idOrigem, command.idDestino, command.conteudo);
+    sprintf(message, "%d %d %d", command.idMessage, command.idOrigem, command.idDestino);
     int byteSent = sendto(clientfd, message, strlen(message), 0,
                           (struct sockaddr *)&serverAdress, 16);
     if (byteSent < 1)
@@ -231,7 +245,17 @@ void executeOK()
     printf("Removed Successfully\n");
     exit(-1);
 }
+void executeREQINF(struct sockaddr_in serverAdress, int idOrigem, int idDestino, char *originalMessgge)
+{
 
+    buildRESINFO(originalMessgge, idOrigem, idDestino);
+    int byteSent = sendto(clientfd, originalMessgge, strlen(originalMessgge), 0, (struct sockaddr *)&serverAdress, 16);
+    if (byteSent < 1)
+    {
+        perror("Could not send message");
+        exit(EXIT_FAILURE);
+    }
+}
 void executeRESINF(int idOrigem, char *payload)
 {
     printf("Value from %d: %s", idOrigem, payload);
@@ -243,11 +267,6 @@ void InterpretCommand(char *buffer, struct ThreadArgs *threadData)
     char *commandToken = strtok(buffer, " ");
     int commandReceive = atoi(commandToken);
     Command command;
-    char *mensagem;
-    char *temp;
-
-    time_t now = time(NULL);
-    struct tm *tm_struct = localtime(&now);
 
     switch (commandReceive)
     {
@@ -272,15 +291,7 @@ void InterpretCommand(char *buffer, struct ThreadArgs *threadData)
         command.idOrigem = atoi(commandToken);
         commandToken = strtok(NULL, " ");
         command.idDestino = atoi(commandToken);
-        mensagem = strtok(NULL, " ");
-        temp = strtok(NULL, " ");
-        while (temp != NULL)
-        {
-            strcat(mensagem, temp);
-            temp = strtok(NULL, " ");
-        }
-        command.conteudo = mensagem;
-        printf("P [%i:%i] %i: %s", tm_struct->tm_hour, tm_struct->tm_min, command.idOrigem, command.conteudo);
+        executeREQINF(threadData->serverAdress, command.idOrigem, command.idDestino, originalMessage);
         break;
     case RES_INF:
         commandToken = strtok(NULL, " ");
