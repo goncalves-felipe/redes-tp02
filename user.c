@@ -342,6 +342,7 @@ void tratarComando(char *buffer)
         break;
     }
 }
+
 void InterpretBroadcastCommand(char *buffer)
 {
     char *commandToken = strtok(buffer, " ");
@@ -374,6 +375,7 @@ void InterpretBroadcastCommand(char *buffer)
         break;
     }
 }
+
 void *ReceiveMessageThread(void *data)
 {
     struct ThreadArgs *threadData = (struct ThreadArgs *)data;
@@ -408,9 +410,7 @@ void *ReceiveBroadThread(void *data)
         int byteReceived = recvfrom(broadcastfd, buffer, MAX_MESSAGE_SIZE, 0, (struct sockaddr *)&threadData->serverAdress, &clientAdressSize);
 
         if (byteReceived < 0)
-        {
             exit(EXIT_FAILURE);
-        }
 
         buffer[byteReceived] = '\0';
         InterpretBroadcastCommand(buffer);
