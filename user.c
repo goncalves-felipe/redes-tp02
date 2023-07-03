@@ -86,6 +86,28 @@ void enviarRemover(struct sockaddr_in serverAdress)
     }
 }
 
+void exibirMensagem(int id, char *mensagem, int idReceiver)
+{
+    time_t now = time(NULL);
+    struct tm *tm_struct = localtime(&now);
+
+    int hour = tm_struct->tm_hour;
+    int minutes = tm_struct->tm_min;
+
+    if (idReceiver != -2)
+    {
+
+        if (id == userId)
+        {
+            printf("P [%02d:%02d] -> %02d: %s", hour, minutes, idReceiver, mensagem);
+        }
+        else
+        {
+            printf("P [%02d:%02d] %02d: %s", hour, minutes, id, mensagem);
+        }
+    }
+}
+
 void enviarMensagem(int targetId, struct sockaddr_in serverAdress, char *mensagem)
 {
     char message[MAX_MESSAGE_SIZE] = "";
@@ -105,6 +127,8 @@ void enviarMensagem(int targetId, struct sockaddr_in serverAdress, char *mensage
         perror("Could not send message");
         exit(EXIT_FAILURE);
     }
+
+    exibirMensagem(command.idSender, command.message, command.idReceiver);
 }
 
 void listarUsuarios()
@@ -257,16 +281,6 @@ void exibirMensagemBroadcast(int id, char *mensagem)
     }
 }
 
-void exibirMensagem(int id, char *mensagem)
-{
-    time_t now = time(NULL);
-    struct tm *tm_struct = localtime(&now);
-
-    int hour = tm_struct->tm_hour;
-    int minutes = tm_struct->tm_min;
-    printf("[%02d:%02d] %02d: %s", hour, minutes, id, mensagem);
-}
-
 void responderListagem()
 {
     char *eq;
@@ -324,7 +338,7 @@ void tratarComando(char *buffer)
         mensagem = strtok(NULL, "");
         command.message = mensagem;
 
-        exibirMensagem(command.idSender, command.message);
+        exibirMensagem(command.idSender, command.message, command.idReceiver);
         break;
     }
 }
