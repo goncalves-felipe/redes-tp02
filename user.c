@@ -127,8 +127,6 @@ void enviarMensagem(int targetId, struct sockaddr_in serverAdress, char *mensage
         perror("Could not send message");
         exit(EXIT_FAILURE);
     }
-
-    exibirMensagem(command.idSender, command.message, command.idReceiver);
 }
 
 void listarUsuarios()

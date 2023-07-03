@@ -353,6 +353,14 @@ void enviarMensagem(char *responseMessage, Command command, char *buffer)
                 perror("Could not send message");
                 exit(EXIT_FAILURE);
             }
+
+            byteSent = sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&avaiableUsers[(command.idSender - 1)].adresses, 16);
+
+            if (byteSent < 1)
+            {
+                perror("Could not send message");
+                exit(EXIT_FAILURE);
+            }
         }
     }
 };
