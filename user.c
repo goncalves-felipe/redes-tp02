@@ -12,7 +12,7 @@
 
 #define STDIN 0
 #define MAX_MESSAGE_SIZE 500
-#define NUMBER_EQUIPMENTS 15
+#define NUMBER_USERS 15
 #define MAX_CONECTIONS 15
 
 enum COMMAND_TYPE
@@ -21,8 +21,7 @@ enum COMMAND_TYPE
     REQ_REM = 2,
     RES_ADD = 3,
     RES_LIST = 4,
-    REQ_INF = 5,
-    RES_INF = 6,
+    MSG = 5,
     ERROR = 7,
     OK = 8,
 };
@@ -34,8 +33,9 @@ enum ERRORS_TYPE
     TARGET_EQ_NOT_FOUND = 3,
     LIMIT_EXCEED = 4,
 };
-int equipmentId = 1;
-int equipments[NUMBER_EQUIPMENTS] = {0};
+
+int userId = 1;
+int users[NUMBER_USERS] = {0};
 int clientfd;
 int broadcastfd;
 socklen_t clientAdressSize = sizeof(struct sockaddr_in);
@@ -43,6 +43,7 @@ struct ThreadArgs
 {
     struct sockaddr_in serverAdress;
 };
+
 typedef struct
 {
     int idMessage;
@@ -51,20 +52,7 @@ typedef struct
     char *conteudo;
 } Command;
 
-void buildRESINFO(char *buffer, int idOrigin, int idDestination)
-{
-    Command command;
-    command.idMessage = RES_INF;
-    command.idOrigem = idOrigin;
-    command.idDestino = idDestination;
-    sprintf(buffer, "%d %d %d ", command.idMessage, command.idDestino, command.idOrigem);
-    char randomNumbers[10] = "";
-    sprintf(randomNumbers, "%d.%d%d\n", rand() % 9, rand() % 9, rand() % 9);
-    strcat(buffer, randomNumbers);
-    printf("requested information\n");
-}
-
-void RequestAdd(struct sockaddr_in serverAdress)
+void requestAdd(struct sockaddr_in serverAdress)
 {
     char message[MAX_MESSAGE_SIZE];
     Command command;
@@ -79,12 +67,12 @@ void RequestAdd(struct sockaddr_in serverAdress)
     }
 }
 
-void RequestRemove(struct sockaddr_in serverAdress)
+void requestRemove(struct sockaddr_in serverAdress)
 {
     char message[MAX_MESSAGE_SIZE];
     Command command;
     command.idMessage = REQ_REM;
-    command.idOrigem = equipmentId;
+    command.idOrigem = userId;
     sprintf(message, "%d %d", command.idMessage, command.idOrigem);
     int byteSent = sendto(clientfd, message, strlen(message), 0,
                           (struct sockaddr *)&serverAdress, 16);
@@ -95,16 +83,18 @@ void RequestRemove(struct sockaddr_in serverAdress)
     }
 }
 
-void RequestInfo(int targetId, struct sockaddr_in serverAdress, char* mensagem)
+void sendMessage(int targetId, struct sockaddr_in serverAdress, char *mensagem)
 {
     char message[MAX_MESSAGE_SIZE] = "";
     Command command;
-    command.idMessage = REQ_INF;
-    command.idOrigem = equipmentId;
+
+    command.idMessage = MSG;
+    command.idOrigem = userId;
     command.idDestino = targetId;
-    sprintf(message, "%d %d %d", command.idMessage, command.idOrigem, command.idDestino);
-    int byteSent = sendto(clientfd, message, strlen(message), 0,
-                          (struct sockaddr *)&serverAdress, 16);
+    command.conteudo = mensagem;
+
+    sprintf(message, "%d %d %d %s", command.idMessage, command.idOrigem, command.idDestino, command.conteudo);
+    int byteSent = sendto(clientfd, message, strlen(message), 0, (struct sockaddr *)&serverAdress, 16);
     if (byteSent < 1)
     {
         perror("Could not send message");
@@ -112,33 +102,33 @@ void RequestInfo(int targetId, struct sockaddr_in serverAdress, char* mensagem)
     }
 }
 
-void ListEquipments()
+void listUsers()
 {
     for (int i = 0; i < MAX_CONECTIONS; i++)
     {
-        if (equipments[i] != 0)
+        if (users[i] != 0 && users[i] != userId)
         {
-            printf("%d ", equipments[i]);
+            printf("%02d ", users[i]);
         }
     }
     printf("\n");
 }
 
-void executeCommand(char *command,
-                    struct sockaddr_in serverAdress)
+void executeCommand(char *command, struct sockaddr_in serverAdress)
 {
     char *buffer = strdup(command);
     char *commandToken;
     char *mensagem;
     char symbol = command[0];
     int destinoID;
+
     switch (symbol)
     {
     case 'l':
-        ListEquipments();
+        listUsers();
         break;
     case 'c':
-        RequestRemove(serverAdress);
+        requestRemove(serverAdress);
         break;
     case 's':
         strtok(buffer, " ");        // send
@@ -148,10 +138,12 @@ void executeCommand(char *command,
             commandToken = strtok(NULL, " ");
             destinoID = atoi(commandToken);
             mensagem = strtok(NULL, "");
-            RequestInfo(destinoID, serverAdress, mensagem);
+            sendMessage(destinoID, serverAdress, mensagem);
         }
         else if (strcmp(buffer, "all") == 0)
         {
+            mensagem = strtok(NULL, "");
+            sendMessage(-2, serverAdress, mensagem);
         }
         break;
     default:
@@ -183,60 +175,93 @@ void executeErrorID(int errorCode)
     switch (errorCode)
     {
     case EQ_NOT_FOUND:
-        printf("Equipment not found\n");
+        printf("User not found\n");
         break;
     case SOURCE_EQ_NOT_FOUND:
-        printf("Source equipment not found\n");
+        printf("Source user not found\n");
         break;
     case TARGET_EQ_NOT_FOUND:
-        printf("Target equipment not found\n");
+        printf("Receiver not found\n");
         break;
     case LIMIT_EXCEED:
-        printf("Equipment limit exceeded\n");
+        printf("User limit exceeded\n");
         exit(-1);
         break;
     }
 }
 void executeRESADD(int id)
 {
-    equipmentId = id;
+    userId = id;
 }
 
 void executeBroadcastRESADD(int id)
 {
-    printf("User %d joined the group!\n", id);
+    printf("User %02d joined the group!\n", id);
     for (int i = 0; i < MAX_CONECTIONS; i++)
     {
-        if (equipments[i] == id)
+        if (users[i] == id)
         {
             break;
         }
-        if (equipments[i] == 0)
+        if (users[i] == 0)
         {
-            equipments[i] = id;
+            users[i] = id;
             break;
         }
     }
 }
 void executeBroadcastREQREM(int id)
 {
-    printf("User %d left the group!\n", id);
+    if (id != userId)
+    {
+        printf("User %02d left the group!\n", id);
+    }
+
     for (int i = 0; i < MAX_CONECTIONS; i++)
     {
-        if (equipments[i] == id)
+        if (users[i] == id)
         {
-            equipments[i] = 0;
+            users[i] = 0;
             break;
         }
     }
 }
+
+void executeBroadcastREQRES(int id, char *mensagem)
+{
+    time_t now = time(NULL);
+    struct tm *tm_struct = localtime(&now);
+
+    int hour = tm_struct->tm_hour;
+    int minutes = tm_struct->tm_min;
+
+    if (id == userId)
+    {
+        printf("[%02d:%02d] -> all: %s", hour, minutes, mensagem);
+    }
+    else
+    {
+        printf("[%02d:%02d] %02d: %s", hour, minutes, id, mensagem);
+    }
+}
+
+void executeREQRES(int id, char *mensagem)
+{
+    time_t now = time(NULL);
+    struct tm *tm_struct = localtime(&now);
+
+    int hour = tm_struct->tm_hour;
+    int minutes = tm_struct->tm_min;
+    printf("[%02d:%02d] %02d: %s", hour, minutes, id, mensagem);
+}
+
 void executeRESLIST()
 {
     char *eq;
     int i = 0;
     while ((eq = strtok(NULL, " ")) != NULL)
     {
-        equipments[i] = atoi(eq);
+        users[i] = atoi(eq);
         i++;
     }
 }
@@ -245,28 +270,13 @@ void executeOK()
     printf("Removed Successfully\n");
     exit(-1);
 }
-void executeREQINF(struct sockaddr_in serverAdress, int idOrigem, int idDestino, char *originalMessgge)
-{
 
-    buildRESINFO(originalMessgge, idOrigem, idDestino);
-    int byteSent = sendto(clientfd, originalMessgge, strlen(originalMessgge), 0, (struct sockaddr *)&serverAdress, 16);
-    if (byteSent < 1)
-    {
-        perror("Could not send message");
-        exit(EXIT_FAILURE);
-    }
-}
-void executeRESINF(int idOrigem, char *payload)
+void InterpretCommand(char *buffer)
 {
-    printf("Value from %d: %s", idOrigem, payload);
-}
-
-void InterpretCommand(char *buffer, struct ThreadArgs *threadData)
-{
-    char *originalMessage = strdup(buffer);
     char *commandToken = strtok(buffer, " ");
     int commandReceive = atoi(commandToken);
     Command command;
+    char *mensagem;
 
     switch (commandReceive)
     {
@@ -286,19 +296,14 @@ void InterpretCommand(char *buffer, struct ThreadArgs *threadData)
     case OK:
         executeOK();
         break;
-    case REQ_INF:
+    case MSG:
         commandToken = strtok(NULL, " ");
         command.idOrigem = atoi(commandToken);
         commandToken = strtok(NULL, " ");
         command.idDestino = atoi(commandToken);
-        executeREQINF(threadData->serverAdress, command.idOrigem, command.idDestino, originalMessage);
-        break;
-    case RES_INF:
-        commandToken = strtok(NULL, " ");
-        command.idOrigem = atoi(commandToken);
-        strtok(NULL, " ");
-        char *payload = strtok(NULL, " ");
-        executeRESINF(command.idOrigem, payload);
+        mensagem = strtok(NULL, "");
+        command.conteudo = mensagem;
+        executeREQRES(command.idOrigem, command.conteudo);
         break;
     }
 }
@@ -307,6 +312,7 @@ void InterpretBroadcastCommand(char *buffer)
     char *commandToken = strtok(buffer, " ");
     int commandReceive = atoi(commandToken);
     Command command;
+    char *mensagem;
 
     switch (commandReceive)
     {
@@ -319,6 +325,13 @@ void InterpretBroadcastCommand(char *buffer)
         commandToken = strtok(NULL, " ");
         command.idOrigem = atoi(commandToken);
         executeBroadcastREQREM(command.idOrigem);
+        break;
+    case MSG:
+        commandToken = strtok(NULL, " ");
+        command.idOrigem = atoi(commandToken);
+        mensagem = strtok(NULL, "");
+        command.conteudo = mensagem;
+        executeBroadcastREQRES(command.idOrigem, command.conteudo);
         break;
     }
 }
@@ -337,7 +350,7 @@ void *ReceiveMessageThread(void *data)
             exit(EXIT_FAILURE);
         }
         buffer[byteReceived] = '\0';
-        InterpretCommand(buffer, threadData);
+        InterpretCommand(buffer);
     }
     free(threadData);
     pthread_exit(NULL);
@@ -429,7 +442,7 @@ int main(int argc, char const *argv[])
     broadcastAddress.sin_port = htons(1313);
     broadcastAddress.sin_addr.s_addr = inet_addr(argv[1]);
 
-    RequestAdd(serverAddress);
+    requestAdd(serverAddress);
 
     pthread_t receiveThread;
     struct ThreadArgs *args =

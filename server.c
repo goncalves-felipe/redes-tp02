@@ -19,7 +19,7 @@
 int sockfd;
 int broadcastfd;
 int numberThreads = 0;
-int numberEquipments = 0;
+int numberUsers = 0;
 struct sockaddr_in broadcast_addr;
 
 enum COMMAND_TYPE
@@ -28,8 +28,7 @@ enum COMMAND_TYPE
     REQ_REM = 2,
     RES_ADD = 3,
     RES_LIST = 4,
-    REQ_INF = 5,
-    RES_INF = 6,
+    MSG = 5,
     ERROR = 7,
     OK = 8,
 };
@@ -56,7 +55,7 @@ typedef struct
     struct sockaddr_in adresses;
 } Users;
 
-Users avaiableEquipments[MAX_CONECTIONS] = {0};
+Users avaiableUsers[MAX_CONECTIONS] = {0};
 
 struct ThreadArgs
 {
@@ -65,11 +64,11 @@ struct ThreadArgs
     char buffer[MAX_MESSAGE_SIZE];
 };
 
-void inicializeAvaiableEquipments()
+void inicializeAvaiableUsers()
 {
     for (int i = 0; i < MAX_CONECTIONS; i++)
     {
-        avaiableEquipments[i].id = -1;
+        avaiableUsers[i].id = -1;
     }
 }
 
@@ -147,7 +146,7 @@ int returnEmptyArrayIndex()
 {
     for (int i = 0; i < MAX_CONECTIONS; i++)
     {
-        if (avaiableEquipments[i].id == -1)
+        if (avaiableUsers[i].id == -1)
         {
             return i;
         }
@@ -176,13 +175,20 @@ void mountRemoveBroadcast(char *buffer, Command command)
     strcat(buffer, aux);
 }
 
+void mountMsgBroadcast(char *buffer, Command command)
+{
+    char aux[MAX_MESSAGE_SIZE] = "";
+    sprintf(aux, "%d %d %s", MSG, command.idOrigem, command.conteudo);
+    strcat(buffer, aux);
+}
+
 void mountListResponse(char *buffer)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
     sprintf(aux, "%d", RES_LIST);
-    for (int i = 0; i < numberEquipments; i++)
+    for (int i = 0; i < numberUsers; i++)
     {
-        sprintf(aux, "%s %d", aux, avaiableEquipments[i].id);
+        sprintf(aux, "%s %d", aux, avaiableUsers[i].id);
     }
     sprintf(aux, "%s ", aux);
     sprintf(aux, "%s\n", aux);
@@ -196,9 +202,9 @@ void mountErrorResponse(char *buffer, int errorCode)
     strcat(buffer, aux);
 }
 
-void addEquipment(char *responseMessage, struct sockaddr_in clientAdress)
+void addUser(char *responseMessage, struct sockaddr_in clientAdress)
 {
-    if (numberEquipments == MAX_CONECTIONS)
+    if (numberUsers == MAX_CONECTIONS)
     {
         printf("Limit exceeded\n");
         char buf[MAX_MESSAGE_SIZE] = "";
@@ -211,10 +217,10 @@ void addEquipment(char *responseMessage, struct sockaddr_in clientAdress)
         return;
     }
     int i = returnEmptyArrayIndex();
-    avaiableEquipments[i].id = (i + 1);
-    avaiableEquipments[i].adresses = clientAdress;
+    avaiableUsers[i].id = (i + 1);
+    avaiableUsers[i].adresses = clientAdress;
     mountAddResponse(responseMessage, (i + 1));
-    numberEquipments++;
+    numberUsers++;
     int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
     if (byteSent < 1)
     {
@@ -235,17 +241,17 @@ void addEquipment(char *responseMessage, struct sockaddr_in clientAdress)
         perror("Could not send message");
         exit(EXIT_FAILURE);
     }
-    printf("User %d joined the group!\n", i + 1);
+    printf("User %02d joined the group!\n", i + 1);
 };
 
-void removeEquipment(char *responseMessage, struct sockaddr_in idOriginAdress, Command command)
+void removeUser(char *responseMessage, struct sockaddr_in idOriginAdress, Command command)
 {
     struct sockaddr_in clientAdress;
-    if (avaiableEquipments[(command.idOrigem - 1)].id != -1)
+    if (avaiableUsers[(command.idOrigem - 1)].id != -1)
     {
-        clientAdress = avaiableEquipments[(command.idOrigem - 1)].adresses;
-        avaiableEquipments[(command.idOrigem - 1)].id = -1;
-        numberEquipments--;
+        clientAdress = avaiableUsers[(command.idOrigem - 1)].adresses;
+        avaiableUsers[(command.idOrigem - 1)].id = -1;
+        numberUsers--;
         mountRemoveResponse(responseMessage, command);
         int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
         if (byteSent < 1)
@@ -253,7 +259,7 @@ void removeEquipment(char *responseMessage, struct sockaddr_in idOriginAdress, C
             perror("Could not send message");
             exit(EXIT_FAILURE);
         }
-        printf("User %d removed\n", command.idOrigem);
+        printf("User %02d removed\n", command.idOrigem);
         memset(responseMessage, 0, MAX_MESSAGE_SIZE);
         mountRemoveBroadcast(responseMessage, command);
         byteSent = sendto(broadcastfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&broadcast_addr, 16);
@@ -276,41 +282,63 @@ void removeEquipment(char *responseMessage, struct sockaddr_in idOriginAdress, C
     }
 };
 
-void infoEquipment(char *responseMessage, struct sockaddr_in clientAdress, Command command, char *buffer)
+void sendMessage(char *responseMessage, struct sockaddr_in clientAdress, Command command, char *buffer)
 {
-    printf("entrou acá");
-    int foundOrigin = avaiableEquipments[(command.idOrigem - 1)].id == command.idOrigem;
-    int foundDestiny = avaiableEquipments[(command.idDestino - 1)].id == command.idDestino;
+    if (command.idDestino == -2)
+    {
+        time_t now = time(NULL);
+        struct tm *tm_struct = localtime(&now);
+        int hour = tm_struct->tm_hour;
+        int minutes = tm_struct->tm_min;
 
-    if (!foundOrigin)
-    {
-        printf("User %d not found\n", command.idOrigem);
-        mountErrorResponse(responseMessage, SOURCE_EQ_NOT_FOUND);
-        int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
+        memset(buffer, 0, MAX_MESSAGE_SIZE);
+        mountMsgBroadcast(buffer, command);
+
+        int byteSent = sendto(broadcastfd, buffer, strlen(buffer), 0, (struct sockaddr *)&broadcast_addr, 16);
+
         if (byteSent < 1)
         {
             perror("Could not send message");
             exit(EXIT_FAILURE);
         }
-    }
-    else if (!foundDestiny)
-    {
-        printf("User %d not found\n", command.idDestino);
-        mountErrorResponse(responseMessage, TARGET_EQ_NOT_FOUND);
-        int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&avaiableEquipments[(command.idOrigem - 1)].adresses, 16);
-        if (byteSent < 1)
-        {
-            perror("Could not send message");
-            exit(EXIT_FAILURE);
-        }
+
+        printf("[%02d:%02d] %02d: %s", hour, minutes, command.idOrigem, command.conteudo);
     }
     else
     {
-        int byteSent = sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&avaiableEquipments[(command.idDestino - 1)].adresses, 16);
-        if (byteSent < 1)
+        int foundOrigin = avaiableUsers[(command.idOrigem - 1)].id == command.idOrigem;
+        int foundDestiny = avaiableUsers[(command.idDestino - 1)].id == command.idDestino;
+
+        if (!foundOrigin)
         {
-            perror("Could not send message");
-            exit(EXIT_FAILURE);
+            printf("User %02d not found\n", command.idOrigem);
+            mountErrorResponse(responseMessage, SOURCE_EQ_NOT_FOUND);
+            int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
+            if (byteSent < 1)
+            {
+                perror("Could not send message");
+                exit(EXIT_FAILURE);
+            }
+        }
+        else if (!foundDestiny)
+        {
+            printf("User %02d not found\n", command.idDestino);
+            mountErrorResponse(responseMessage, TARGET_EQ_NOT_FOUND);
+            int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&avaiableUsers[(command.idOrigem - 1)].adresses, 16);
+            if (byteSent < 1)
+            {
+                perror("Could not send message");
+                exit(EXIT_FAILURE);
+            }
+        }
+        else
+        {
+            int byteSent = sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&avaiableUsers[(command.idDestino - 1)].adresses, 16);
+            if (byteSent < 1)
+            {
+                perror("Could not send message");
+                exit(EXIT_FAILURE);
+            }
         }
     }
 };
@@ -329,23 +357,23 @@ void interpretCommand(struct ThreadArgs *args)
     {
     case REQ_ADD:
         command.idMessage = REQ_ADD;
-        addEquipment(responseMessage, args->clientAdress);
+        addUser(responseMessage, args->clientAdress);
         break;
     case REQ_REM:
         command.idMessage = REQ_REM;
         commandToken = strtok(NULL, " ");
         command.idOrigem = atoi(commandToken);
-        removeEquipment(responseMessage, args->clientAdress, command);
+        removeUser(responseMessage, args->clientAdress, command);
         break;
-    case REQ_INF:
-    case RES_INF:
+    case MSG:
         command.idMessage = commandSent;
         commandToken = strtok(NULL, " ");
         command.idOrigem = atoi(commandToken);
         commandToken = strtok(NULL, " ");
         command.idDestino = atoi(commandToken);
-        mensagem = strtok(NULL, " ");
-        infoEquipment(responseMessage, args->clientAdress, command, args->buffer);
+        mensagem = strtok(NULL, "");
+        command.conteudo = mensagem;
+        sendMessage(responseMessage, args->clientAdress, command, args->buffer);
         break;
     default:
         break;
@@ -373,7 +401,7 @@ int main(int argc, char const *argv[])
     broadcast_addr.sin_family = AF_INET;
     broadcast_addr.sin_addr.s_addr = INADDR_BROADCAST;
     broadcast_addr.sin_port = htons(1313);
-    inicializeAvaiableEquipments();
+    inicializeAvaiableUsers();
     pthread_t threads[MAX_CONECTIONS];
 
     while (1)
