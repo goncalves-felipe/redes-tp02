@@ -36,9 +36,8 @@ enum COMMAND_TYPE
 enum ERRORS_TYPE
 {
     EQ_NOT_FOUND = 1,
-    SOURCE_EQ_NOT_FOUND = 2,
-    TARGET_EQ_NOT_FOUND = 3,
-    LIMIT_EXCEED = 4,
+    TARGET_EQ_NOT_FOUND = 2,
+    LIMIT_EXCEED = 3,
 };
 
 typedef struct
@@ -282,7 +281,7 @@ void removeUser(char *responseMessage, struct sockaddr_in idOriginAdress, Comman
     }
 };
 
-void sendMessage(char *responseMessage, struct sockaddr_in clientAdress, Command command, char *buffer)
+void sendMessage(char *responseMessage, Command command, char *buffer)
 {
     if (command.idDestino == -2)
     {
@@ -306,21 +305,9 @@ void sendMessage(char *responseMessage, struct sockaddr_in clientAdress, Command
     }
     else
     {
-        int foundOrigin = avaiableUsers[(command.idOrigem - 1)].id == command.idOrigem;
         int foundDestiny = avaiableUsers[(command.idDestino - 1)].id == command.idDestino;
 
-        if (!foundOrigin)
-        {
-            printf("User %02d not found\n", command.idOrigem);
-            mountErrorResponse(responseMessage, SOURCE_EQ_NOT_FOUND);
-            int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
-            if (byteSent < 1)
-            {
-                perror("Could not send message");
-                exit(EXIT_FAILURE);
-            }
-        }
-        else if (!foundDestiny)
+        if (!foundDestiny)
         {
             printf("User %02d not found\n", command.idDestino);
             mountErrorResponse(responseMessage, TARGET_EQ_NOT_FOUND);
@@ -373,7 +360,7 @@ void interpretCommand(struct ThreadArgs *args)
         command.idDestino = atoi(commandToken);
         mensagem = strtok(NULL, "");
         command.conteudo = mensagem;
-        sendMessage(responseMessage, args->clientAdress, command, args->buffer);
+        sendMessage(responseMessage, command, args->buffer);
         break;
     default:
         break;

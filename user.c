@@ -29,9 +29,8 @@ enum COMMAND_TYPE
 enum ERRORS_TYPE
 {
     EQ_NOT_FOUND = 1,
-    SOURCE_EQ_NOT_FOUND = 2,
-    TARGET_EQ_NOT_FOUND = 3,
-    LIMIT_EXCEED = 4,
+    TARGET_EQ_NOT_FOUND = 2,
+    LIMIT_EXCEED = 3,
 };
 
 int userId = 1;
@@ -176,9 +175,6 @@ void executeErrorID(int errorCode)
     {
     case EQ_NOT_FOUND:
         printf("User not found\n");
-        break;
-    case SOURCE_EQ_NOT_FOUND:
-        printf("Source user not found\n");
         break;
     case TARGET_EQ_NOT_FOUND:
         printf("Receiver not found\n");
