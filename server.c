@@ -385,12 +385,16 @@ void tratarComando(struct ThreadArgs *args)
 
     case MSG:
         command.idMsg = commandSent;
+
         commandToken = strtok(NULL, " ");
         command.idSender = atoi(commandToken);
+
         commandToken = strtok(NULL, " ");
         command.idReceiver = atoi(commandToken);
+
         mensagem = strtok(NULL, "");
         command.message = mensagem;
+
         enviarMensagem(responseMessage, command, args->buffer);
         break;
 
