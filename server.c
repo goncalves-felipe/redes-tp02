@@ -252,7 +252,7 @@ void adicionarUsuario(char *responseMessage, struct sockaddr_in clientAdress)
         exit(EXIT_FAILURE);
     }
 
-    printf("User %02d joined the group!\n", i + 1);
+    printf("User %02d added\n", i + 1);
 };
 
 void removerUsuario(char *responseMessage, struct sockaddr_in idOriginAdress, Command command)
