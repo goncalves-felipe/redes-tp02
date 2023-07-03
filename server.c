@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 #define MAX_MESSAGE_SIZE 500
-#define MAX_CONECTIONS 15
+#define MAX_CONECTIONS 16
 
 int sockfd;
 int broadcastfd;
@@ -28,24 +28,24 @@ enum COMMAND_TYPE
     REQ_REM = 2,
     RES_ADD = 3,
     RES_LIST = 4,
-    MSG = 5,
+    MSG = 6,
     ERROR = 7,
     OK = 8,
 };
 
 enum ERRORS_TYPE
 {
-    EQ_NOT_FOUND = 1,
-    TARGET_EQ_NOT_FOUND = 2,
-    LIMIT_EXCEED = 3,
+    LIMIT_EXCEED = 1,
+    USER_NOT_FOUND = 2,
+    RECEIVER_NOT_FOUND = 3,
 };
 
 typedef struct
 {
-    int idMessage;
-    int idOrigem;
-    int idDestino;
-    char *conteudo;
+    int idMsg;
+    int idSender;
+    int idReceiver;
+    char *message;
 } Command;
 
 typedef struct
@@ -63,28 +63,26 @@ struct ThreadArgs
     char buffer[MAX_MESSAGE_SIZE];
 };
 
-void inicializeAvaiableUsers()
+void inicializarUsuarios()
 {
     for (int i = 0; i < MAX_CONECTIONS; i++)
-    {
         avaiableUsers[i].id = -1;
-    }
 }
 
 void *ThreadMain(void *threadArgs);
 
-int initializeServerSocket(const char *port, struct sockaddr **address)
+int inicializarSocket(const char *porta, struct sockaddr **endereco)
 {
     int domain, addressSize, serverfd, yes = 1;
     struct sockaddr_in addressv4;
 
     addressv4.sin_family = AF_INET;
-    addressv4.sin_port = htons(atoi(port));
+    addressv4.sin_port = htons(atoi(porta));
     addressv4.sin_addr.s_addr = htonl(INADDR_ANY);
 
     domain = AF_INET;
     addressSize = sizeof(addressv4);
-    *address = (struct sockaddr *)&addressv4;
+    *endereco = (struct sockaddr *)&addressv4;
 
     if ((serverfd = socket(domain, SOCK_DGRAM, IPPROTO_UDP)) == 0)
     {
@@ -98,7 +96,7 @@ int initializeServerSocket(const char *port, struct sockaddr **address)
         exit(EXIT_FAILURE);
     }
 
-    if (bind(serverfd, *address, addressSize) < 0)
+    if (bind(serverfd, *endereco, addressSize) < 0)
     {
         perror("Could not bind port to socket");
         exit(EXIT_FAILURE);
@@ -107,18 +105,18 @@ int initializeServerSocket(const char *port, struct sockaddr **address)
     return serverfd;
 }
 
-int initializeBroadcastServerSocket(const char *port)
+int inicializarSocketBroadcast(const char *porta)
 {
     int domain, addressSize, serverfd, yes = 1;
     struct sockaddr_in address;
 
     address.sin_family = AF_INET;
-    address.sin_port = htons(atoi(port));
+    address.sin_port = htons(atoi(porta));
     address.sin_addr.s_addr = htonl(INADDR_ANY);
 
     domain = AF_INET;
     addressSize = sizeof(address);
-    struct sockaddr *addr = (struct sockaddr *)&address;
+    struct sockaddr *endereco = (struct sockaddr *)&address;
 
     if ((serverfd = socket(domain, SOCK_DGRAM, IPPROTO_UDP)) == 0)
     {
@@ -132,7 +130,7 @@ int initializeBroadcastServerSocket(const char *port)
         exit(EXIT_FAILURE);
     }
 
-    if (bind(serverfd, addr, addressSize) < 0)
+    if (bind(serverfd, endereco, addressSize) < 0)
     {
         perror("Could not bind port to socket");
         exit(EXIT_FAILURE);
@@ -141,127 +139,150 @@ int initializeBroadcastServerSocket(const char *port)
     return serverfd;
 }
 
-int returnEmptyArrayIndex()
+int retornarPosicaoDisponivelArray()
 {
     for (int i = 0; i < MAX_CONECTIONS; i++)
-    {
         if (avaiableUsers[i].id == -1)
-        {
             return i;
-        }
-    }
+
     return -1;
 }
 
-void mountAddResponse(char *buffer, int i)
+void montarRespostaAdd(char *buffer, int i)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
     sprintf(aux, "%d %d\n", RES_ADD, i);
     strcat(buffer, aux);
 }
 
-void mountRemoveResponse(char *buffer, Command command)
+void montarRespostaRem(char *buffer, Command command)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
-    sprintf(aux, "%d %d %d\n", OK, command.idOrigem, 1);
+    sprintf(aux, "%d %d %d\n", OK, command.idSender, 1);
     strcat(buffer, aux);
 }
 
-void mountRemoveBroadcast(char *buffer, Command command)
+void montarRespostaRemBroadcast(char *buffer, Command command)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
-    sprintf(aux, "%d %d\n", REQ_REM, command.idOrigem);
+    sprintf(aux, "%d %d\n", REQ_REM, command.idSender);
     strcat(buffer, aux);
 }
 
-void mountMsgBroadcast(char *buffer, Command command)
+void montarMensagemBroadcast(char *buffer, Command command)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
-    sprintf(aux, "%d %d %s", MSG, command.idOrigem, command.conteudo);
+    sprintf(aux, "%d %d %s", MSG, command.idSender, command.message);
     strcat(buffer, aux);
 }
 
-void mountListResponse(char *buffer)
+void montarRespostaLista(char *buffer)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
     sprintf(aux, "%d", RES_LIST);
+
     for (int i = 0; i < numberUsers; i++)
     {
         sprintf(aux, "%s %d", aux, avaiableUsers[i].id);
     }
+
     sprintf(aux, "%s ", aux);
     sprintf(aux, "%s\n", aux);
     strcat(buffer, aux);
 }
 
-void mountErrorResponse(char *buffer, int errorCode)
+void montarRespostaErro(char *buffer, int errorCode)
 {
     char aux[MAX_MESSAGE_SIZE] = "";
     sprintf(aux, "%d %d\n", ERROR, errorCode);
     strcat(buffer, aux);
 }
 
-void addUser(char *responseMessage, struct sockaddr_in clientAdress)
+void adicionarUsuario(char *responseMessage, struct sockaddr_in clientAdress)
 {
-    if (numberUsers == MAX_CONECTIONS)
+    if (numberUsers == MAX_CONECTIONS - 1)
     {
         printf("Limit exceeded\n");
         char buf[MAX_MESSAGE_SIZE] = "";
-        mountErrorResponse(buf, LIMIT_EXCEED);
+
+        montarRespostaErro(buf, LIMIT_EXCEED);
+
         int byteSend = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientAdress, 16);
+
         if (byteSend < 1)
         {
             exit(EXIT_FAILURE);
         }
+
         return;
     }
-    int i = returnEmptyArrayIndex();
+
+    int i = retornarPosicaoDisponivelArray();
+
     avaiableUsers[i].id = (i + 1);
     avaiableUsers[i].adresses = clientAdress;
-    mountAddResponse(responseMessage, (i + 1));
+
+    montarRespostaAdd(responseMessage, (i + 1));
     numberUsers++;
+
     int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
+
     if (byteSent < 1)
     {
         perror("Could not send message");
         exit(EXIT_FAILURE);
     }
+
     byteSent = sendto(broadcastfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&broadcast_addr, 16);
+
     if (byteSent < 1)
     {
         perror("Could not send message");
         exit(EXIT_FAILURE);
     }
+
     memset(responseMessage, 0, MAX_MESSAGE_SIZE);
-    mountListResponse(responseMessage);
+    montarRespostaLista(responseMessage);
+
     byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
+
     if (byteSent < 1)
     {
         perror("Could not send message");
         exit(EXIT_FAILURE);
     }
+
     printf("User %02d joined the group!\n", i + 1);
 };
 
-void removeUser(char *responseMessage, struct sockaddr_in idOriginAdress, Command command)
+void removerUsuario(char *responseMessage, struct sockaddr_in idOriginAdress, Command command)
 {
     struct sockaddr_in clientAdress;
-    if (avaiableUsers[(command.idOrigem - 1)].id != -1)
+
+    if (avaiableUsers[(command.idSender - 1)].id != -1)
     {
-        clientAdress = avaiableUsers[(command.idOrigem - 1)].adresses;
-        avaiableUsers[(command.idOrigem - 1)].id = -1;
+        clientAdress = avaiableUsers[(command.idSender - 1)].adresses;
+        avaiableUsers[(command.idSender - 1)].id = -1;
+
         numberUsers--;
-        mountRemoveResponse(responseMessage, command);
+
+        montarRespostaRem(responseMessage, command);
+
         int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
+
         if (byteSent < 1)
         {
             perror("Could not send message");
             exit(EXIT_FAILURE);
         }
-        printf("User %02d removed\n", command.idOrigem);
+
+        printf("User %02d removed\n", command.idSender);
+
         memset(responseMessage, 0, MAX_MESSAGE_SIZE);
-        mountRemoveBroadcast(responseMessage, command);
+        montarRespostaRemBroadcast(responseMessage, command);
+
         byteSent = sendto(broadcastfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&broadcast_addr, 16);
+
         if (byteSent < 1)
         {
             perror("Could not send message");
@@ -271,8 +292,10 @@ void removeUser(char *responseMessage, struct sockaddr_in idOriginAdress, Comman
     else
     {
         clientAdress = idOriginAdress;
-        mountErrorResponse(responseMessage, EQ_NOT_FOUND);
+        montarRespostaErro(responseMessage, USER_NOT_FOUND);
+
         int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&clientAdress, 16);
+
         if (byteSent < 1)
         {
             perror("Could not send message");
@@ -281,17 +304,18 @@ void removeUser(char *responseMessage, struct sockaddr_in idOriginAdress, Comman
     }
 };
 
-void sendMessage(char *responseMessage, Command command, char *buffer)
+void enviarMensagem(char *responseMessage, Command command, char *buffer)
 {
-    if (command.idDestino == -2)
+    if (command.idReceiver == -2)
     {
         time_t now = time(NULL);
         struct tm *tm_struct = localtime(&now);
+
         int hour = tm_struct->tm_hour;
         int minutes = tm_struct->tm_min;
 
         memset(buffer, 0, MAX_MESSAGE_SIZE);
-        mountMsgBroadcast(buffer, command);
+        montarMensagemBroadcast(buffer, command);
 
         int byteSent = sendto(broadcastfd, buffer, strlen(buffer), 0, (struct sockaddr *)&broadcast_addr, 16);
 
@@ -301,17 +325,20 @@ void sendMessage(char *responseMessage, Command command, char *buffer)
             exit(EXIT_FAILURE);
         }
 
-        printf("[%02d:%02d] %02d: %s", hour, minutes, command.idOrigem, command.conteudo);
+        printf("[%02d:%02d] %02d: %s", hour, minutes, command.idSender, command.message);
     }
     else
     {
-        int foundDestiny = avaiableUsers[(command.idDestino - 1)].id == command.idDestino;
+        int foundDestiny = avaiableUsers[(command.idReceiver - 1)].id == command.idReceiver;
 
         if (!foundDestiny)
         {
-            printf("User %02d not found\n", command.idDestino);
-            mountErrorResponse(responseMessage, TARGET_EQ_NOT_FOUND);
-            int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&avaiableUsers[(command.idOrigem - 1)].adresses, 16);
+            printf("User %02d not found\n", command.idReceiver);
+
+            montarRespostaErro(responseMessage, RECEIVER_NOT_FOUND);
+
+            int byteSent = sendto(sockfd, responseMessage, strlen(responseMessage), 0, (struct sockaddr *)&avaiableUsers[(command.idSender - 1)].adresses, 16);
+
             if (byteSent < 1)
             {
                 perror("Could not send message");
@@ -320,7 +347,7 @@ void sendMessage(char *responseMessage, Command command, char *buffer)
         }
         else
         {
-            int byteSent = sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&avaiableUsers[(command.idDestino - 1)].adresses, 16);
+            int byteSent = sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&avaiableUsers[(command.idReceiver - 1)].adresses, 16);
             if (byteSent < 1)
             {
                 perror("Could not send message");
@@ -330,12 +357,14 @@ void sendMessage(char *responseMessage, Command command, char *buffer)
     }
 };
 
-void interpretCommand(struct ThreadArgs *args)
+void tratarComando(struct ThreadArgs *args)
 {
     char aux[MAX_MESSAGE_SIZE];
     strcpy(aux, args->buffer);
+
     char *commandToken = strtok(aux, " ");
     int commandSent = atoi(commandToken);
+
     char responseMessage[MAX_MESSAGE_SIZE] = "";
     char *mensagem;
     Command command;
@@ -343,25 +372,28 @@ void interpretCommand(struct ThreadArgs *args)
     switch (commandSent)
     {
     case REQ_ADD:
-        command.idMessage = REQ_ADD;
-        addUser(responseMessage, args->clientAdress);
+        command.idMsg = REQ_ADD;
+        adicionarUsuario(responseMessage, args->clientAdress);
         break;
+
     case REQ_REM:
-        command.idMessage = REQ_REM;
+        command.idMsg = REQ_REM;
         commandToken = strtok(NULL, " ");
-        command.idOrigem = atoi(commandToken);
-        removeUser(responseMessage, args->clientAdress, command);
+        command.idSender = atoi(commandToken);
+        removerUsuario(responseMessage, args->clientAdress, command);
         break;
+
     case MSG:
-        command.idMessage = commandSent;
+        command.idMsg = commandSent;
         commandToken = strtok(NULL, " ");
-        command.idOrigem = atoi(commandToken);
+        command.idSender = atoi(commandToken);
         commandToken = strtok(NULL, " ");
-        command.idDestino = atoi(commandToken);
+        command.idReceiver = atoi(commandToken);
         mensagem = strtok(NULL, "");
-        command.conteudo = mensagem;
-        sendMessage(responseMessage, command, args->buffer);
+        command.message = mensagem;
+        enviarMensagem(responseMessage, command, args->buffer);
         break;
+
     default:
         break;
     }
@@ -370,38 +402,48 @@ void interpretCommand(struct ThreadArgs *args)
 void *ThreadMain(void *threadArgs)
 {
     struct ThreadArgs *args = (struct ThreadArgs *)threadArgs;
-    interpretCommand(args);
+    tratarComando(args);
+
     numberThreads--;
+
     free(args);
     return NULL;
 }
 
 int main(int argc, char const *argv[])
 {
-    if (argc != 2)
+    if (argc != 3)
     {
         return 0;
     }
+
     struct sockaddr *address;
-    sockfd = initializeServerSocket(argv[1], &address);
-    broadcastfd = initializeBroadcastServerSocket("0");
+
+    sockfd = inicializarSocket(argv[2], &address);
+    broadcastfd = inicializarSocketBroadcast("0");
+
     broadcast_addr.sin_family = AF_INET;
     broadcast_addr.sin_addr.s_addr = INADDR_BROADCAST;
     broadcast_addr.sin_port = htons(1313);
-    inicializeAvaiableUsers();
+
+    inicializarUsuarios();
     pthread_t threads[MAX_CONECTIONS];
 
     while (1)
     {
         struct ThreadArgs *args = (struct ThreadArgs *)malloc(sizeof(struct ThreadArgs));
         args->clientAdressSize = sizeof(struct sockaddr_in);
+
         int byteReceived = recvfrom(sockfd, args->buffer, MAX_MESSAGE_SIZE, 0, (struct sockaddr *)&args->clientAdress, &args->clientAdressSize);
+
         if (byteReceived < 0)
         {
             perror("Could not receive message from client");
             exit(EXIT_FAILURE);
         }
+
         int threadResponse = pthread_create(&threads[numberThreads], NULL, ThreadMain, (void *)args);
+
         if (threadResponse)
         {
             printf("Error creating thread\n");
@@ -412,5 +454,6 @@ int main(int argc, char const *argv[])
             numberThreads++;
         }
     }
+
     return 0;
 }
